@@ -7,6 +7,7 @@ import os, sys, time
 #   p.map(extract_books_and_links, args=(lst,))
 #   p.start()
 # iz extract pozvati sve ostale funkcije
+# len(self._url) i prema tome otvoriti po jedan proces/thread za svaki link, eventualno grupisati u listama od po 4-5
 
 class Spider:
 
