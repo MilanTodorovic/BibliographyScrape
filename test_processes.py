@@ -2,6 +2,11 @@ from multiprocessing import Process, Queue, Semaphore
 import bs4, requests
 import os, sys, time
 
+# napraviti listu umesto self._url, izbrisati klasu
+# with Pool(10) as p:
+#   p.map(extract_books_and_links, args=(lst,))
+#   p.start()
+# iz extract pozvati sve ostale funkcije
 
 class Spider:
 
