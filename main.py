@@ -62,9 +62,10 @@ class Spider:
         for div in divs:
             a = div.find("a", {"href": True})  # div.a == div.find("a",{"href":True})
             link = a["href"]  # link to visit a seperate site with more info on the book
-            # book_id = link.split("=")[2]  # book id; used to find the right a tag later on
             print(link)
-            resp = self.visit_url(link)
+            resp = None
+            while not resp:
+                resp = self.visit_url(link)
             print(resp.status_code)
             res = self.check_if_foreign_book(resp.content, paragraph, link)
             if res:
@@ -86,7 +87,9 @@ class Spider:
 
     def check_if_foreign_book(self, content, paragraph, link):
         print("Entering check_if_foreign_book")
-        soup = bs4.BeautifulSoup(content, "html.parser")
+        soup = None
+        while not soup:
+            soup = bs4.BeautifulSoup(content, "html.parser")
         table = soup.find("td", {"class": "text1"})
         if not table:
             table = soup.find("td", {"class": "text1"})
@@ -106,7 +109,9 @@ class Spider:
                         print("Found one!!")
                         return lang
                     else:
-                        return False
+                        continue
+                else:
+                    return False
             else:
                 return False
         except:
