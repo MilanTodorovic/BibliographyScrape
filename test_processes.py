@@ -1,13 +1,8 @@
 from multiprocessing import Process, Queue, Semaphore
+import multiprocessing
 import bs4, requests
 import os, sys, time
 
-# napraviti listu umesto self._url, izbrisati klasu
-# with Pool(10) as p:
-#   p.map(extract_books_and_links, args=(lst,))
-#   p.start()
-# iz extract pozvati sve ostale funkcije
-# len(self._url) i prema tome otvoriti po jedan proces/thread za svaki link, eventualno grupisati u listama od po 4-5
 
 class Spider:
 
@@ -21,7 +16,7 @@ class Spider:
                                    "(KHTML, like Gecko) Chrome/49.0.2623.110 Safari/537.36"}
 
         self.languages = ["nor", "dan", "swe", "esk", "fin", "ice", "sme", "smi", "smn", "lap"]
-        self._count = 10  # max processes count
+        self._count = 4  # max processes count
         self._sema = Semaphore(value=self._count)
 
     def run(self):
@@ -29,15 +24,8 @@ class Spider:
         self.extract_urls_from_main_page(self._url.get())
         for url in iter(self._url.get, None):
             print(url)
-            resp = self.visit_url(url)
-            print(resp.status_code)
-            print(resp)
-            self.p = Process(target=self.extract_books_and_links, args=(resp.content, self.languages))
+            self.p = Process(target=self.extract_books_and_links, args=(url, self.languages))
             self.p.start()
-            #self.p.terminate()
-            #self.p.join()
-        # self.save()
-        #self._url.join()
         print("Done.")
 
     def extract_urls_from_main_page(self, url):
@@ -47,53 +35,53 @@ class Spider:
         links = soup.body.center.find_all("a")  # returns a result set (basically a list) of bs4 elements
         print("Links:", links)
         for link in links:
-            if "skupni" in link:
-                pass
-            else:
-                self._url.put(self._base_url+link["href"][:-10]+self._iframe)
-                break
+            self._url.put(self._base_url+link["href"][:-10]+self._iframe)
         print("Exiting extract_urls_from_main_page")
         print("URLs", self._url)
 
     def visit_url(self, url):
         return requests.get(url, headers=self._headers)
 
-    def extract_books_and_links(self, content, langs):
-        self._sema.acquire()
-        print("Entering extract_books_and_links")
-        soup = bs4.BeautifulSoup(content, "html.parser")
-        # time.sleep(50)
-        divs = soup.body.find_all("div", {"id":"znak"})
-        for div in divs:
-            a = div.find("a", {"href": True})  # div.a == div.find("a",{"href":True})
-            link = a["href"]  # link to visit a seperate site with more info on the book
-            print(link)
-            resp = self.visit_url(link)
-            print(resp.status_code)
-            res = self.check_if_foreign_book(resp.content, link, langs)
-            if res:
-                a_tag = div.find_previous("a")
-                self.extract_book_info(a_tag, res)
-                del res, resp, link
-                # break
-            else:
-                continue
-        self.save()
-        self._sema.release()
-        print("Exiting extract_books_and_links")
+    def extract_books_and_links(self, url, langs):
+        with self._sema:
+            print("Entering extract_books_and_links")
+            resp = self.visit_url(url)
+            soup = bs4.BeautifulSoup(resp.content, "html.parser")
+            divs = soup.body.find_all("div", {"id":"znak"})
+            for div in divs:
+                r = s = res = link = None
+                a = div.find("a", {"href": True})  # div.a == div.find("a",{"href":True})
+                link = a["href"]  # link to visit a seperate site with more info on the book
+                print(link)
+                while not r:
+                    r = self.visit_url(link)
+                    print(r.status_code)
+                    s = bs4.BeautifulSoup(r.content, "html.parser")
+                    if "overloaded" in s:
+                        r = None
+                res = self.check_if_foreign_book(s, link, langs)
+                if res:
+                    a_tag = div.find_previous("a")
+                    self.extract_book_info(a_tag, res)
+                    del res, r, link
+                else:
+                    del res, r, link
+                    continue
+            self.save()
+            print("Exiting extract_books_and_links")
 
-    def check_if_foreign_book(self, content, link, langs):
+    def check_if_foreign_book(self, soup, link, langs):
         print("Entering check_if_foreign_book")
-        soup = bs4.BeautifulSoup(content, "html.parser")
         table = soup.find("td", {"class": "text1"})
-        if not table:
-            table = soup.find("td", {"class": "text1"})
-        else:
-            pass
         try:
+            r = s = None
             link = table.find("a").find_next_sibling("a")
-            r = self.visit_url(link["href"])
-            s = bs4.BeautifulSoup(r.content, "html.parser")
+            while not r:
+                time.sleep(20)
+                r = self.visit_url(link["href"])
+                s = bs4.BeautifulSoup(r.content, "html.parser")
+                if "overloaded" in s:
+                    r = None
             row = s.find("td", text="0411")  # contains information about the srource language
             if row:
                 n = row.find_next_sibling("td")
@@ -149,6 +137,6 @@ class Spider:
 if __name__ == "__main__":
 
     staring_url = "http://bibliografija.nsk.hr/a/"
-
+    
     spider = Spider(staring_url)
     spider.run()

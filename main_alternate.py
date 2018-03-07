@@ -16,7 +16,7 @@ class Spider:
                                    "(KHTML, like Gecko) Chrome/49.0.2623.110 Safari/537.36"}
 
         self.languages = ["nor", "dan", "swe", "esk", "fin", "ice", "sme", "smi", "smn", "lap"]
-        self._count = 3  # max thread count
+        self._count = 2  # max thread count
         self._sema = threading.Semaphore(value=self._count)
 
     def run(self):
@@ -32,11 +32,11 @@ class Spider:
             resp = self.visit_url(url)
             print(resp.status_code)
             print(resp)
-            self.t = threading.Thread(target=self.extract_books_and_links, args=(resp.content, doc, paragraphs))
+            self.t = threading.Thread(target=self.extract_books_and_links, args=(resp.content, doc, paragraphs, self._sema))
             self.t.start()
             # self.t.join()
         # self.save()
-        #self._url.join()
+        # self._url.join()
         print("Done.")
 
     def extract_urls_from_main_page(self, url):
@@ -50,48 +50,48 @@ class Spider:
                 pass
             else:
                 self._url.put(self._base_url+link["href"][:-10]+self._iframe)
-                break
         print("Exiting extract_urls_from_main_page")
         print("URLs", self._url)
 
     def visit_url(self, url):
         return requests.get(url, headers=self._headers)
 
-    def extract_books_and_links(self, content, doc, paragraph):
-        self._sema.acquire()
-        print("Entering extract_books_and_links")
-        soup = bs4.BeautifulSoup(content, "html.parser")
-        time.sleep(50)
-        divs = soup.body.find_all("div", {"id":"znak"})
-        for div in divs:
-            a = div.find("a", {"href": True})  # div.a == div.find("a",{"href":True})
-            link = a["href"]  # link to visit a seperate site with more info on the book
-            # book_id = link.split("=")[2]  # book id; used to find the right a tag later on
-            print(link)
-            resp = self.visit_url(link)
-            print(resp.status_code)
-            res = self.check_if_foreign_book(resp.content, paragraph, link)
-            if res:
+    def extract_books_and_links(self, content, doc, paragraph, sema):
+        with sema:
+            resp = None
+            print("Entering extract_books_and_links", threading.current_thread().name)
+            soup = bs4.BeautifulSoup(content, "html.parser")
+            time.sleep(50)
+            divs = soup.body.find_all("div", {"id":"znak"})
+            for div in divs:
+                a = div.find("a", {"href": True})  # div.a == div.find("a",{"href":True})
+                link = a["href"]  # link to visit a seperate site with more info on the book
+                print(link)
+                while not resp:
+                    resp = self.visit_url(link)
+                print(resp.status_code)
+                res = self.check_if_foreign_book(resp.content, paragraph, link)
+                if res:
 
-                a_tag = div.find_previous("a")
-                self.extract_book_info(a_tag, res, paragraph)
-                del res, resp, link
-                # self.save(doc)
-                
-                # break
-            else:
-                # a_tag = div.find_previous("a")
-                # self.extract_book_info(a_tag, "nor")
-                # self.save()
-                # break
-                continue
-        self.save(doc)
-        self._url.task_done()  # tell the thread that the task is done
-        self._sema.release()
-        print("Exiting extract_books_and_links")
+                    a_tag = div.find_previous("a")
+                    self.extract_book_info(a_tag, res, paragraph)
+                    del res, resp, link
+                    # self.save(doc)
+                    # break
+                else:
+                    # a_tag = div.find_previous("a")
+                    # self.extract_book_info(a_tag, "nor")
+                    # self.save()
+                    # break
+                    continue
+            self.save(doc)
+            # self._url.task_done()  # tell the thread that the task is done
+            print("Exiting extract_books_and_links")
 
     def check_if_foreign_book(self, content, paragraph, link):
+        print(threading.enumerate())
         print("Entering check_if_foreign_book")
+        r = None
         soup = bs4.BeautifulSoup(content, "html.parser")
         table = soup.find("td", {"class": "text1"})
         if not table:
@@ -100,7 +100,8 @@ class Spider:
             pass
         try:
             link = table.find("a").find_next_sibling("a")
-            r = self.visit_url(link["href"])
+            while not r:
+                r = self.visit_url(link["href"])
             s = bs4.BeautifulSoup(r.content, "html.parser")
             row = s.find("td", text="0411")  # contains information about the srource language
             if row:
