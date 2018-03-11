@@ -1,5 +1,4 @@
-from multiprocessing import Process, Queue, Semaphore
-import multiprocessing
+from multiprocessing import Process, Queue, Semaphore, Lock
 import bs4, requests
 import os, sys, time
 
@@ -19,7 +18,7 @@ class Spider:
         self.languages = ["nor", "dan", "swe", "esk", "fin", "ice", "sme", "smi", "smn", "lap"]
         self._count = 8  # max processes count
         self._sema = Semaphore(value=self._count)
-        self._lock = multiprocessing.Lock()
+        self._lock = Lock()
 
     def run(self):
         print("Entering run")
