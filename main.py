@@ -26,6 +26,7 @@ class Spider:
         for url in iter(self._url.get, None):
             print(url)
             self.p = Process(target=self.extract_books_and_links, args=(url, self.languages, self._lock))
+            self.p.daemon = true
             self.p.start()
         print("Done.")
 
