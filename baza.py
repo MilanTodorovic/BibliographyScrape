@@ -1,117 +1,138 @@
 import sqlite3 as sql
-
-## crta a ne crtica
-## PSEUDONIM
-## [Pseudonim za IME]
-## format: naslov / autor; ostali. - mesto : izd., god. - str.
-##              ibid. X izd. - god [[. - god ]; dr. izd.].
-##              ibid. \[lat. izd.\] - X izd. - god. 
-##              nasl. orig. : ...; prev. prema ...
+import typing
 
 
-# autori - _ID_, ime, ime_original (rucno), pseudonim
-# dela - _ID_, _ID_.autor, jezik, naslov, naslov originala, mesto izd.,
+# crta a ne crtica
+# PSEUDONIM
+# [Pseudonim za IME]
+# format: naslov / autor; ostali. - mesto : izd., god. - str.
+#              ibid. X izd. - god [[. - god ]; dr. izd.].
+#              ibid. \[lat. izd.\] - X izd. - god.
+#              nasl. orig. : ...; prev. prema ...
+
+
+# autori - _ROWID_, ime_original, pseudonim
+# dela - _ROWID_, _ROWID_.autor, jezik, naslov, naslov originala, mesto izd.,
 #        izadavac, godina, br. str., _ponovljeno izd._
 #        (br. za skracen opis), pismo knjige (RAZMISLITI KAKO),
 #       strucna/lepa/narodna knj/ANTOLOGIJA., vise autora za jednu knj.
 
 
 # posebna tabela za ispis
-# autori - abecedno 
+# autori - abecedno
 # naslovi - abecedno
 
 
 def create():
     with sql.connect("knjige.sqlite") as conn:
         c = conn.cursor()
-        # conn is used to connect the two author tables
-        c.execute("CREATE TABLE IF NOT EXISTS authors(surname TEXT NOT NULL, name TEXT NOT NULL, pseudonym TEXT NOT NULL"
-                  ", conn INT, PRIMARY KEY(surname, name, pseudonym))")
-        c.execute("CREATE TABLE IF NOT EXISTS authors_original(surname TEXT NOT NULL, name TEXT NOT NULL, "
-                  "pseudonym TEXT NOT NULL, conn INT, PRIMARY KEY(surname, name, pseudonym))")
-        # authors separated with semicolons
+        c.execute("CREATE TABLE IF NOT EXISTS authors(surname TEXT NOT NULL, name TEXT NOT NULL, pseudonym TEXT"
+                  ", PRIMARY KEY(surname, name, pseudonym));")
+        # lang: rowid
+        c.execute("CREATE TABLE IF NOT EXISTS languages(language TEXT)")
+        c.executemany("INSERT OR IGNORE INTO languages VALUES(?)", [("sk",), ("dan",), ("nor",), ("swe",), ("fin",),
+                                                                    ("lap",), ("esk",), ("ice",), ("far",)])
+        # type of literature: 0 - anthology, 1 - folklore, 2 - belletristic, 3 - monography
+        c.execute("CREATE TABLE IF NOT EXISTS literature(type TEXT)")
+        c.executemany("INSERT OR IGNORE INTO literature VALUES(?)", [("anthology",), ("folklore",), ("belletristic",),
+                                                                     ("monography",)])
         # script: 0 - lat., 1 - cir.
-        # types: 0 - anthology, 1 - folklore, 2 - belletristic, 3 - monography
-        # republished - rowid of the original book
-        c.execute("CREATE TABLE IF NOT EXISTS books(authors TEXT, lang TEXT, title TEXT, o_title TEXT, place TEXT, "
-                  "publisher TEXT, year TEXT, pages TEXT, republished INT, script INT, type INT)")
+        # types: rowid from literature table
+        # republished - manually set to 1 if needed
+        # o_authors - semicolon separated TEXT of rowids
+        c.execute("CREATE TABLE IF NOT EXISTS books(author TEXT, others TEXT, lang INT NOT NULL, title TEXT NOT NULL, "
+                  "o_title TEXT, places TEXT, publishers TEXT, year TEXT, pages TEXT, republished INT, "
+                  "script INT NOT NULL, type INT NOT NULL, o_authors TEXT);")
         c.close()
         conn.commit()
 
-def insert_authors(surname: str, name: str, pseudonym: str, o_surname: str, o_name: str, o_pseudonym: str) -> int:
+
+def insert_authors(surname: str, name: str, pseudonym: str) -> int:
     """All parameters must be strings
     Return: rowid for further connecting"""
 
-    for para in ((surname, "surname"), (name, "name"), (pseudonym, "pseudonym"),
-                     (o_surname, "o_surname"), (o_name, "o_name"), (o_pseudonym, "o_pseudonym")):
+    for para in ((surname, "surname"), (name, "name"), (pseudonym, "pseudonym")):
         assert type(para[0]) is str, "Parameter is not of type STRING: {} - {}".format(para[1], para[0])
 
     with sql.connect("knjige.sqlite") as conn:
-        _id, __id = None, None
         c = conn.cursor()
         # check if exists
-        res = c.execute("SELECT _rowid_ FROM authors WHERE surname=? AND name=?", (surname, name)).fetchone()
-        o_res = c.execute("SELECT _rowid_ FROM authors WHERE surname=? AND name=?", (o_surname, o_name)).fetchone()
-        if res or o_res:
-            return res[0] if res else o_res[0]
+        res = c.execute("SELECT _rowid_ FROM authors WHERE surname=? AND name=? AND pseudonym=?;",
+                        (surname, name, pseudonym)).fetchone()
+        if res:
+            c.close()
+            return res[0]
         else:
             # create entries
             if surname or name or pseudonym:
-                c.execute("INSERT OR IGNORE INTO authors(surname, name, pseudonym) VALUES(?,?,?)", (surname, name, pseudonym))
-                _id = c.lastrowid
-            if o_surname or o_name or o_pseudonym:
-                c.execute("INSERT OR IGNORE INTO authors_original VALUES(?,?,?)", (o_surname, o_name, o_pseudonym))
-                __id = c.lastrowid
-            conn.commit()
-            # connect entries or create placeholders
-            if _id:
-                if __id:
-                    c.execute("INSERT INTO authors_original(conn) VALUES(?) WHERE _rowid_=?",
-                              (_id, __id))
-                else:
-                    c.execute("INSERT INTO authors_original(conn) VALUES(?)",
-                              (_id,))
-            if __id:
-                if _id:
-                    c.execute("INSERT INTO authors(conn) VALUES(?) WHERE _rowid_=?", (_id, __id))
-                else:
-                    c.execute("INSERT INTO authors(conn) VALUES(?)", (_id,))
-            conn.commit()
-            c.close()
-            return __id if __id else _id
+                c.execute("INSERT OR IGNORE INTO authors(surname, name, pseudonym) VALUES(?,?,?);",
+                          (surname, name, pseudonym))
+                rowid = c.lastrowid
+                conn.commit()
+                c.close()
+                return rowid
+            else:
+                return -1
 
-def insert_book(authors: str, lang: str, title: str, o_title: str, place: str, publisher: str, year: str, pages: str,
-                script: int, _type: int) -> int:
-    """All parameters except script and _type are of type string.
+
+def retrieve_authors(**kwargs) -> typing.List[typing.Tuple[int, str, str, str]]:
+    """Return a list of authors or just one if parameters supplied.
+    kwargs: surname, name, pseudonym"""
+    with sql.connect("knjige.sqlite") as conn:
+        c = conn.cursor()
+        if kwargs:
+            query = " AND ".join("{}='{}'".format(k, v) for (k, v) in kwargs.items())
+            lst = c.execute("SELECT _rowid_, surname, name, pseudonym FROM authors WHERE {};".format(query)).fetchall()
+        else:
+            lst = c.execute("SELECT _rowid_, surname, name, pseudonym FROM authors;").fetchall()
+        c.close()
+        return lst
+
+
+def insert_book(o_authors: str, author: str, others: str, lang: int, title: str, o_title: str, place: str,
+                publisher: str, year: str, pages: str, script: int, _type: int, republished: int = 0) -> int:
+    """All parameters except script and _type are of type STRING.
     authors - may be NULL/empty
+    lang - rowid from languages table
     year - [s.a.]
     pages - XI, 150 str. / 1500-1670 str.
     script - 0-lat., 1-cir.
     _type - 0 - anthology, 1 - folklore, 2 - belletristic, 3 - monography
+    republished - defaults to 0
     Return: rowid for editing"""
 
-    for para in ((authors, "authors"), (lang, "lang"), (title, "title"),
-                     (o_title, "o_title"), (place, "place"), (publisher, "publisher"), (year, "year"), (pages, "pages")):
+    for para in ((o_authors, "o_authors"), (author, "author"), (others, "other_authors"), (title, "title"),
+                 (o_title, "o_title"), (place, "places"), (publisher, "publishers"), (year, "year"), (pages, "pages")):
         assert type(para[0]) is str, "Parameter is not of type STRING: {} - {}".format(para[1], para[0])
 
-    for para in ((script, "script"), (_type, "_type")):
+    for para in ((lang, "lang"), (script, "script"), (_type, "_type")):
         assert type(para[0]) is int, "Parameter is not of type INT: {} - {}".format(para[1], para[0])
 
     with sql.connect("knjige.sqlite") as conn:
         c = conn.cursor()
-        c.execute("INSERT INTO books(authors, lang, title, o_title, place, published, year, pages, script, _type) VALUES"
-                  "(?,?,?,?,?,?,?,?,?,?)", (authors, lang, title, o_title, place, publisher, year, pages, script, _type))
-        _id = c.lastrowid
+        c.execute(
+            "INSERT INTO books(author, others, lang, title, o_title, places, publishers, year, pages, script, type, "
+            "o_authors, republished) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?);", (author, others, lang, title, o_title, place,
+                                                                           publisher, year, pages, script, _type,
+                                                                           o_authors, republished))
+        rowid = c.lastrowid
         c.close()
         conn.commit()
-        return _id
+        return rowid
 
-def retrieve_book(**kwargs):
-    # " ".join("{}={}".format(k,v) for (k,v) in d.items())
-    query = ""
-    for k,v in kwargs:
-        query += k + "=" + v + "AND "
+
+def retrieve_book(**kwargs) -> typing.Tuple:
+    query = " AND ".join("{}={}".format(k, v) for (k, v) in kwargs.items())
     with sql.connect("knjige.sqlite") as conn:
         c = conn.cursor()
-        c.execute("SELECT * FROM books WHERE ?", (,))
+        _id = c.execute("SELECT * FROM books WHERE {};".format(query)).fetchone()
         c.close()
+        return _id
+
+
+def list_all_books() -> typing.List[typing.Tuple[str, str, int, str, str, str, str, str, str, int, int, int, str]]:
+    with sql.connect("knjige.sqlite") as conn:
+        c = conn.cursor()
+        _id = c.execute("SELECT * FROM books;").fetchall()
+        c.close()
+        return _id
