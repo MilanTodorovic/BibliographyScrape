@@ -9,6 +9,7 @@ import typing
 #              ibid. X izd. - god [[. - god ]; dr. izd.].
 #              ibid. \[lat. izd.\] - X izd. - god.
 #              nasl. orig. : ...; prev. prema ...
+#              [Sadrzi: ....]
 
 
 # autori - _ROWID_, ime_original, pseudonim
@@ -41,8 +42,8 @@ def create():
         # republished - manually set to 1 if needed
         # o_authors - semicolon separated TEXT of rowids
         c.execute("CREATE TABLE IF NOT EXISTS books(author TEXT, others TEXT, lang INT NOT NULL, title TEXT NOT NULL, "
-                  "o_title TEXT, places TEXT, publishers TEXT, year TEXT, pages TEXT, republished INT, "
-                  "script INT NOT NULL, type INT NOT NULL, o_authors TEXT);")
+                  "o_title TEXT, trans_title TEXT, places TEXT, publishers TEXT, year TEXT, pages TEXT, republished INT, "
+                  "script INT NOT NULL, type INT NOT NULL, o_authors TEXT, notes TEXT);")
         c.close()
         conn.commit()
 
@@ -89,8 +90,9 @@ def retrieve_authors(**kwargs) -> typing.List[typing.Tuple[int, str, str, str]]:
         return lst
 
 
-def insert_book(o_authors: str, author: str, others: str, lang: int, title: str, o_title: str, place: str,
-                publisher: str, year: str, pages: str, script: int, _type: int, republished: int = 0) -> int:
+def insert_book(author: str, others: str, o_authors: str, lang: int, title: str, o_title: str, trans_title: str,
+                place: str, publisher: str, year: str, pages: str, script: int, _type: int, notes: str,
+                republished: int = 0) -> int:
     """All parameters except script and _type are of type STRING.
     authors - may be NULL/empty
     lang - rowid from languages table
@@ -102,7 +104,8 @@ def insert_book(o_authors: str, author: str, others: str, lang: int, title: str,
     Return: rowid for editing"""
 
     for para in ((o_authors, "o_authors"), (author, "author"), (others, "other_authors"), (title, "title"),
-                 (o_title, "o_title"), (place, "places"), (publisher, "publishers"), (year, "year"), (pages, "pages")):
+                 (o_title, "o_title"), (trans_title, "rans_title"), (place, "places"), (publisher, "publishers"),
+                 (year, "year"), (pages, "pages"), (notes, "notes")):
         assert type(para[0]) is str, "Parameter is not of type STRING: {} - {}".format(para[1], para[0])
 
     for para in ((lang, "lang"), (script, "script"), (_type, "_type")):
@@ -111,10 +114,10 @@ def insert_book(o_authors: str, author: str, others: str, lang: int, title: str,
     with sql.connect("knjige.sqlite") as conn:
         c = conn.cursor()
         c.execute(
-            "INSERT INTO books(author, others, lang, title, o_title, places, publishers, year, pages, script, type, "
-            "o_authors, republished) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?);", (author, others, lang, title, o_title, place,
-                                                                           publisher, year, pages, script, _type,
-                                                                           o_authors, republished))
+            "INSERT INTO books(author, others, lang, title, o_title, trans_title, places, publishers, year, pages, "
+            "script, type, o_authors, republished, notes) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);",
+            (author, others, lang, title, o_title, trans_title, place, publisher, year, pages, script, _type,
+             o_authors, republished, notes))
         rowid = c.lastrowid
         c.close()
         conn.commit()
